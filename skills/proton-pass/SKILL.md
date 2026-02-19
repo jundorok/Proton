@@ -11,7 +11,7 @@ metadata: {
     "emoji": "🔑",
     "primaryEnv": "PROTON_ACCOUNT",
     "requires": {
-      "bins": ["pass"],
+      "bins": [],
       "env": ["PROTON_ACCOUNT"]
     },
     "files": ["scripts/*"],

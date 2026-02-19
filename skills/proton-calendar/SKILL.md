@@ -11,7 +11,7 @@ metadata: {
     "emoji": "📅",
     "primaryEnv": "PROTON_ACCOUNT",
     "requires": {
-      "bins": ["python3", "playwright"],
+      "bins": [],
       "env": ["PROTON_ACCOUNT", "PROTON_PASSWORD"]
     },
     "files": ["scripts/*"],
