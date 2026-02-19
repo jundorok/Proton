@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Proton Calendar — Ask-Before-Read confirmation prompt
+# Proton Calendar — Ask-Before-Access confirmation prompt
 # Usage: bash scripts/ask.sh "Description of action"
 # Exit code: 0 = confirmed, 1 = cancelled
 

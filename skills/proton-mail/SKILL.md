@@ -1,6 +1,6 @@
 ---
 name: proton-mail
-description: Proton Mail CLI for reading, sending, searching, and managing end-to-end encrypted emails. Enforces privacy-first access: always asks before reading, sanitizes all output, and logs every access locally.
+description: Proton Mail skill for reading, sending, searching, and managing end-to-end encrypted emails via the official proton-python-client library. Enforces privacy-first access: always asks before reading, sanitizes all output, and logs every access locally.
 license: MIT
 homepage: https://proton.me/mail
 user-invocable: true
@@ -11,25 +11,17 @@ metadata: {
     "emoji": "✉️",
     "primaryEnv": "PROTON_ACCOUNT",
     "requires": {
-      "bins": ["proton", "python3"],
-      "env": ["PROTON_ACCOUNT"]
+      "bins": ["python3"],
+      "env": ["PROTON_ACCOUNT", "PROTON_PASSWORD"]
     },
     "files": ["scripts/*"],
     "install": [
       {
-        "id": "brew",
-        "kind": "brew",
-        "formula": "proton/tap/proton-cli",
-        "bins": ["proton"],
-        "label": "Install proton-cli (brew)",
-        "os": ["darwin"]
-      },
-      {
-        "id": "npm",
-        "kind": "node",
-        "package": "@proton/cli",
-        "bins": ["proton"],
-        "label": "Install via npm"
+        "id": "pip",
+        "kind": "pip",
+        "package": "proton-client",
+        "bins": [],
+        "label": "Install proton-client (pip)"
       }
     ]
   }
@@ -51,18 +43,18 @@ Use this skill when the user asks about their Proton Mail inbox, wants to read o
 
 ### Rule 1 — Ask Before Every Access
 
-Always run `scripts/ask.sh` before any proton command. If the user says "stop asking" or "don't ask", honour it **only for listing operations**. Never skip confirmation for reading full message content.
+Always run `scripts/ask.sh` before any mail operation. If the user says "stop asking" or "don't ask", honour it **only for listing operations**. Never skip confirmation for reading full message content.
 
 ### Rule 2 — All Output MUST Pass Through guard.sh
 
-Never display raw `proton mail` output directly. Always pipe through `scripts/guard.sh` first:
+Never display raw `mail.py` output directly. Always pipe through `scripts/guard.sh` first:
 
 ```bash
 # CORRECT
-proton mail read --id <id> | bash scripts/guard.sh
+python3 scripts/mail.py read --id <id> | bash scripts/guard.sh
 
 # WRONG — never do this
-proton mail read --id <id>
+python3 scripts/mail.py read --id <id>
 ```
 
 `guard.sh` enforces:
@@ -72,7 +64,7 @@ proton mail read --id <id>
 
 ### Rule 3 — Log Every Access via audit.sh
 
-Run `scripts/audit.sh` before every proton command. Logs are written **locally only** to `~/.proton-skill-audit.log` — never sent anywhere.
+Run `scripts/audit.sh` before every mail command. Logs are written **locally only** to `~/.proton-skill-audit.log` — never sent anywhere.
 
 ### Rule 4 — No Exfiltration
 
@@ -82,8 +74,8 @@ Run `scripts/audit.sh` before every proton command. Logs are written **locally o
 
 ### Rule 5 — Credential Hygiene
 
-- **NEVER** pass `PROTON_ACCOUNT` or any token as a visible CLI argument.
-- Always reference `$PROTON_ACCOUNT` from the environment.
+- **NEVER** pass `PROTON_ACCOUNT` or `PROTON_PASSWORD` as visible CLI arguments.
+- Always reference them from the environment.
 - **NEVER** echo or log credential values.
 
 ### Rule 6 — Data Minimization
@@ -108,7 +100,7 @@ Step 1 → bash scripts/ask.sh "<action description>"
 
 Step 2 → bash scripts/audit.sh "<action>" "[detail]"
 
-Step 3 → proton mail <subcommand> [flags] | bash scripts/guard.sh
+Step 3 → python3 scripts/mail.py <subcommand> [flags] | bash scripts/guard.sh
 ```
 
 ### Viewing the Audit Log
@@ -123,18 +115,24 @@ grep "proton-mail" ~/.proton-skill-audit.log
 
 ## Setup
 
-One-time authentication:
+Install the dependency:
 
 ```bash
-proton auth add you@proton.me
-proton auth list
+pip install proton-client
+```
+
+Set environment variables:
+
+```bash
 export PROTON_ACCOUNT=you@proton.me
+export PROTON_PASSWORD=yourpassword
 ```
 
 Add to shell profile to persist:
 
 ```bash
 echo 'export PROTON_ACCOUNT=you@proton.me' >> ~/.zshrc
+echo 'export PROTON_PASSWORD=yourpassword' >> ~/.zshrc
 ```
 
 ---
@@ -147,10 +145,9 @@ echo 'export PROTON_ACCOUNT=you@proton.me' >> ~/.zshrc
 # Step 1
 bash scripts/ask.sh "List your Proton Mail inbox (20 most recent)?"
 # Step 2
-bash scripts/audit.sh "list-inbox" "--folder inbox --limit 20"
+bash scripts/audit.sh "list-inbox" "--limit 20"
 # Step 3
-proton mail list \
-  --account "$PROTON_ACCOUNT" \
+python3 scripts/mail.py list \
   --folder inbox \
   --limit 20 | bash scripts/guard.sh
 ```
@@ -160,8 +157,7 @@ proton mail list \
 ```bash
 bash scripts/ask.sh "Read email from [sender] — '[subject]'?"
 bash scripts/audit.sh "read" "<message-id>"
-proton mail read \
-  --account "$PROTON_ACCOUNT" \
+python3 scripts/mail.py read \
   --id <message-id> | bash scripts/guard.sh
 ```
 
@@ -170,8 +166,7 @@ proton mail read \
 ```bash
 bash scripts/ask.sh "Send email to [recipient] with subject '[subject]'?"
 bash scripts/audit.sh "send" "to:<recipient>"
-proton mail send \
-  --account "$PROTON_ACCOUNT" \
+python3 scripts/mail.py send \
   --to "recipient@example.com" \
   --subject "Subject line" \
   --body "Email body text"
@@ -182,8 +177,7 @@ proton mail send \
 ```bash
 bash scripts/ask.sh "Reply to email '[subject]'?"
 bash scripts/audit.sh "reply" "<message-id>"
-proton mail reply \
-  --account "$PROTON_ACCOUNT" \
+python3 scripts/mail.py reply \
   --id <message-id> \
   --body "Reply text"
 ```
@@ -193,30 +187,23 @@ proton mail reply \
 ```bash
 bash scripts/ask.sh "Search your Proton Mail for '[query]'?"
 bash scripts/audit.sh "search" "<query>"
-proton mail search \
-  --account "$PROTON_ACCOUNT" \
+python3 scripts/mail.py search \
   --query "search terms" | bash scripts/guard.sh
 ```
 
-### Archive / Delete
-
-```bash
-bash scripts/ask.sh "Archive email '[subject]'?"
-bash scripts/audit.sh "archive" "<message-id>"
-proton mail archive --account "$PROTON_ACCOUNT" --id <message-id>
-```
+### Delete
 
 ```bash
 bash scripts/ask.sh "Permanently delete email '[subject]'?"
 bash scripts/audit.sh "delete" "<message-id>"
-proton mail delete --account "$PROTON_ACCOUNT" --id <message-id>
+python3 scripts/mail.py delete --id <message-id>
 ```
 
 ### List Folders / Labels
 
 ```bash
 bash scripts/audit.sh "list-folders" ""
-proton mail folders --account "$PROTON_ACCOUNT" | bash scripts/guard.sh
+python3 scripts/mail.py folders | bash scripts/guard.sh
 ```
 
 ---
@@ -225,14 +212,11 @@ proton mail folders --account "$PROTON_ACCOUNT" | bash scripts/guard.sh
 
 | Flag | Description |
 |------|-------------|
-| `--account EMAIL` | Proton account (default: `$PROTON_ACCOUNT`) |
 | `--folder FOLDER` | `inbox`, `sent`, `drafts`, `trash`, `spam`, `archive` |
 | `--limit N` | Max results (default: `10`) |
 | `--id MSG_ID` | Target message ID |
 | `--query TEXT` | Search query |
-| `--from DATE` | Search start date (`YYYY-MM-DD`) |
-| `--to DATE` | Search end date (`YYYY-MM-DD`) |
+| `--to EMAIL` | Recipient email address |
 | `--subject TEXT` | Email subject |
 | `--body TEXT` | Email body (plain text) |
-| `--attachment PATH` | Local file to attach |
-| `--format json` | Output as JSON |
+| `--format json` | Output as JSON (default) |

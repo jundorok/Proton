@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 # Proton Calendar — Access Audit Logger
 #
-# Usage: bash scripts/audit.sh <action> [detail]
+# Appends a structured, local-only audit entry to ~/.proton-skill-audit.log
+# NEVER sends data to any external service.
+#
+# Usage:
+#   bash scripts/audit.sh <action> [detail]
+#
+# Examples:
+#   bash scripts/audit.sh "list-events" "--from 2026-02-01 --to 2026-02-28"
+#   bash scripts/audit.sh "create"      "Team standup"
+#   bash scripts/audit.sh "delete"      "<event-id>"
 
 set -euo pipefail
 
