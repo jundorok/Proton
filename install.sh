@@ -143,6 +143,41 @@ echo ""
 echo "Skills installed:"
 ls "$SKILLS_DIR" | grep proton || true
 
+# ── Register skills in openclaw.json ─────────────────────────────────────────
+OPENCLAW_CONFIG="$(dirname "$SKILLS_DIR")/openclaw.json"
+
+if [[ -f "$OPENCLAW_CONFIG" ]]; then
+    echo ""
+    echo "── Registering skills in openclaw.json ───────────────────"
+    cp "$OPENCLAW_CONFIG" "${OPENCLAW_CONFIG}.bak"
+
+    python3 - "$OPENCLAW_CONFIG" <<'PYEOF'
+import json, sys
+
+config_path = sys.argv[1]
+with open(config_path, "r") as f:
+    config = json.load(f)
+
+if "skills" not in config:
+    config["skills"] = {}
+if "entries" not in config["skills"]:
+    config["skills"]["entries"] = {}
+
+for skill in ["proton-mail", "proton-calendar", "proton-pass"]:
+    if skill not in config["skills"]["entries"]:
+        config["skills"]["entries"][skill] = {"enabled": True}
+        print(f"  +  registered {skill}")
+    else:
+        print(f"  ✓  {skill} already registered")
+
+with open(config_path, "w") as f:
+    json.dump(config, f, indent=2)
+PYEOF
+else
+    echo ""
+    echo "  !  openclaw.json not found at $OPENCLAW_CONFIG — skipping registration"
+fi
+
 # ── Final status check ────────────────────────────────────────────────────────
 echo ""
 echo "── Status ────────────────────────────────────────────────"
