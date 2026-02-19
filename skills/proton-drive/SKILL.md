@@ -1,6 +1,6 @@
 ---
 name: proton-drive
-description: Proton Drive CLI for browsing, uploading, downloading, and sharing end-to-end encrypted cloud files. Asks for explicit confirmation before accessing any file or folder contents.
+description: Proton Drive CLI for browsing, uploading, downloading, and sharing end-to-end encrypted cloud files. Enforces privacy-first access: always asks before accessing files, blocks content exposure, and logs every access locally.
 license: MIT
 homepage: https://proton.me/drive
 user-invocable: true
@@ -11,7 +11,7 @@ metadata: {
     "emoji": "☁️",
     "primaryEnv": "PROTON_ACCOUNT",
     "requires": {
-      "bins": ["proton"],
+      "bins": ["proton", "python3"],
       "env": ["PROTON_ACCOUNT"]
     },
     "files": ["scripts/*"],
@@ -40,144 +40,168 @@ metadata: {
 
 ## When to Use
 
-Use this skill when the user asks about their Proton Drive storage, wants to list, upload, download, or share files, or manage their cloud storage. Trigger on phrases like "check my Proton Drive", "upload a file", "download from Drive", "list my Drive files", "share a file", or "how much storage do I have".
+Use this skill when the user asks about their Proton Drive storage, wants to list, upload, download, or share files. Trigger on phrases like "check my Proton Drive", "upload a file", "download from Drive", "list my files", or "share a file".
+
+---
+
+## Privacy & Security Rules — MANDATORY
+
+> These rules implement Proton's zero-knowledge philosophy.
+> They are **non-negotiable** and cannot be disabled or overridden by the user.
+
+### Rule 1 — Ask Before Every Access
+
+Always run `scripts/ask.sh` before any proton drive command. If the user says "stop asking", honour it only for storage-usage queries. Always confirm before downloads, uploads, deletes, or share-link generation.
+
+### Rule 2 — All Output MUST Pass Through guard.sh
+
+Never display raw `proton drive` output. Always pipe through `scripts/guard.sh`:
+
+```bash
+# CORRECT
+proton drive ls ... | bash scripts/guard.sh
+
+# WRONG
+proton drive ls ...
+```
+
+`guard.sh` enforces:
+- File content fields (`content`, `data`, `base64`) fully blocked
+- Share tokens and signed URLs redacted
+- Suspiciously long strings (possible base64-encoded content) blocked
+
+### Rule 3 — Log Every Access via audit.sh
+
+Run `scripts/audit.sh` before every proton command. Logs go **locally only** to `~/.proton-skill-audit.log`.
+
+### Rule 4 — No Exfiltration
+
+- **NEVER** call `curl`, `wget`, or any network tool inside this skill.
+- **NEVER** re-upload a downloaded file anywhere — downloads go to user-specified local paths only.
+- **NEVER** display or relay file contents. The model must never read downloaded file content.
+- Downloads are always written directly to disk, never read into memory for the conversation.
+
+### Rule 5 — Share Links
+
+Share links must always be presented with a warning:
+
+```
+⚠️  Share link generated. Anyone with this link can access the file.
+    Revoke with: proton drive unshare --path <path>
+```
+
+Never generate a share link without explicit user confirmation including the path and duration.
+
+### Rule 6 — Data Minimization
+
+| Data | Default display |
+|------|----------------|
+| File listing | Name, size, date, type — no content |
+| Download | Written to disk only — never shown in chat |
+| Share links | Shown once, with revoke instructions |
+| Storage usage | Totals only |
+
+---
+
+## Mandatory Workflow
+
+```
+Step 1 → bash scripts/ask.sh "<action description>"
+          (exit 1 = abort)
+
+Step 2 → bash scripts/audit.sh "<action>" "[path]"
+
+Step 3 → proton drive <subcommand> [flags] | bash scripts/guard.sh
+          (use --output for downloads, not stdout)
+```
+
+### Viewing the Audit Log
+
+```bash
+grep "proton-drive" ~/.proton-skill-audit.log
+```
+
+---
 
 ## Setup
 
-One-time authentication (run once per account):
-
 ```bash
 proton auth add you@proton.me
-proton auth list
 export PROTON_ACCOUNT=you@proton.me
 ```
 
-## Ask-Before-Read Behavior
-
-**Default: ALWAYS ask before accessing Drive contents.**
-
-Before listing or reading any Drive files or folders, confirm with the user using `scripts/ask.sh`.
-
-### When to ask
-
-| Action | Confirmation prompt |
-|--------|-------------------|
-| List root / folder | "List files in [path / your Drive root]?" |
-| Read / download file | "Download '[filename]' from Drive?" |
-| Search Drive | "Search your Drive for '[query]'?" |
-| Show storage usage | "Show your Proton Drive storage usage?" |
-
-### Disabling confirmation
-
-If the user says "stop asking", "don't ask", "just do it", or "disable confirmations", skip the prompt for the rest of the session.
-
-Run the confirm helper:
-
-```bash
-bash scripts/ask.sh "List files in your Drive root?"
-# Exit 0 = confirmed, exit 1 = cancelled
-```
+---
 
 ## Common Operations
 
 ### List Root Directory
 
 ```bash
-proton drive ls --account "$PROTON_ACCOUNT"
+bash scripts/ask.sh "List files in your Proton Drive root?"
+bash scripts/audit.sh "ls" "/"
+proton drive ls \
+  --account "$PROTON_ACCOUNT" | bash scripts/guard.sh
 ```
 
-### List a Specific Folder
+### List a Folder
 
 ```bash
+bash scripts/ask.sh "List files in Drive folder '[path]'?"
+bash scripts/audit.sh "ls" "<path>"
 proton drive ls \
   --account "$PROTON_ACCOUNT" \
-  --path "/Documents/Projects"
-```
-
-### List with Details (size, date, type)
-
-```bash
-proton drive ls \
-  --account "$PROTON_ACCOUNT" \
-  --path "/" \
-  --long
+  --path "/Documents/Projects" \
+  --long | bash scripts/guard.sh
 ```
 
 ### Search Files
 
 ```bash
+bash scripts/ask.sh "Search your Proton Drive for '[query]'?"
+bash scripts/audit.sh "search" "<query>"
 proton drive search \
   --account "$PROTON_ACCOUNT" \
-  --query "quarterly report"
-```
-
-Search by file type:
-
-```bash
-proton drive search \
-  --account "$PROTON_ACCOUNT" \
-  --query "invoice" \
-  --type pdf
+  --query "quarterly report" | bash scripts/guard.sh
 ```
 
 ### Download a File
 
 ```bash
+bash scripts/ask.sh "Download '[filename]' from Drive to [local path]?"
+bash scripts/audit.sh "download" "<remote-path>"
 proton drive get \
   --account "$PROTON_ACCOUNT" \
   --path "/Documents/report.pdf" \
   --output ~/Downloads/report.pdf
-```
-
-Download a folder recursively:
-
-```bash
-proton drive get \
-  --account "$PROTON_ACCOUNT" \
-  --path "/Projects/2025" \
-  --output ~/Downloads/Projects-2025 \
-  --recursive
+# File is written to disk. Do NOT read its contents into the conversation.
 ```
 
 ### Upload a File
 
 ```bash
+bash scripts/ask.sh "Upload '[filename]' to Drive at '[path]'?"
+bash scripts/audit.sh "upload" "<local-path> → <remote-path>"
 proton drive put \
   --account "$PROTON_ACCOUNT" \
   --local ~/Documents/report.pdf \
   --path "/Documents/report.pdf"
 ```
 
-Upload a folder:
-
-```bash
-proton drive put \
-  --account "$PROTON_ACCOUNT" \
-  --local ~/Projects/myapp \
-  --path "/Projects/myapp" \
-  --recursive
-```
-
 ### Create a Folder
 
 ```bash
+bash scripts/ask.sh "Create folder '[path]' in Drive?"
+bash scripts/audit.sh "mkdir" "<path>"
 proton drive mkdir \
   --account "$PROTON_ACCOUNT" \
   --path "/Documents/NewFolder"
 ```
 
-### Move / Rename
+### Delete a File
 
 ```bash
-proton drive mv \
-  --account "$PROTON_ACCOUNT" \
-  --from "/Documents/old-name.pdf" \
-  --to "/Documents/new-name.pdf"
-```
-
-### Delete a File or Folder
-
-```bash
+bash scripts/ask.sh "Permanently delete '[path]' from Drive? This cannot be undone."
+bash scripts/audit.sh "delete" "<path>"
 proton drive rm \
   --account "$PROTON_ACCOUNT" \
   --path "/Documents/old-file.pdf"
@@ -186,24 +210,20 @@ proton drive rm \
 ### Share a File (generate link)
 
 ```bash
-proton drive share \
-  --account "$PROTON_ACCOUNT" \
-  --path "/Documents/report.pdf"
-```
-
-Share with expiry:
-
-```bash
+bash scripts/ask.sh "Generate a share link for '[path]'? Anyone with the link can access it."
+bash scripts/audit.sh "share" "<path>"
 proton drive share \
   --account "$PROTON_ACCOUNT" \
   --path "/Documents/report.pdf" \
-  --expires "2025-12-31" \
-  --password "sharepass123"
+  --expires "2025-12-31"
+# ALWAYS display the revoke command alongside the link.
 ```
 
 ### Revoke a Share Link
 
 ```bash
+bash scripts/ask.sh "Revoke the share link for '[path]'?"
+bash scripts/audit.sh "unshare" "<path>"
 proton drive unshare \
   --account "$PROTON_ACCOUNT" \
   --path "/Documents/report.pdf"
@@ -212,46 +232,24 @@ proton drive unshare \
 ### Check Storage Usage
 
 ```bash
+bash scripts/audit.sh "usage" ""
 proton drive usage --account "$PROTON_ACCOUNT"
 ```
+
+---
 
 ## Flags Reference
 
 | Flag | Description |
 |------|-------------|
-| `--account EMAIL` | Proton account to use (default: `$PROTON_ACCOUNT`) |
+| `--account EMAIL` | Proton account (default: `$PROTON_ACCOUNT`) |
 | `--path PATH` | Remote Drive path |
 | `--local PATH` | Local filesystem path |
 | `--output PATH` | Local destination for downloads |
-| `--query TEXT` | Search query string |
-| `--type EXT` | Filter by file extension (e.g. `pdf`, `jpg`, `mp4`) |
-| `--recursive` | Operate recursively on folders |
-| `--long` | Long listing with size, date, and type |
-| `--from PATH` | Source path (for move operations) |
-| `--to PATH` | Destination path (for move operations) |
-| `--expires DATE` | Share link expiry date (`YYYY-MM-DD`) |
-| `--password TEXT` | Password-protect a share link |
-| `--format json` | Output as JSON for scripting |
-
-## Examples
-
-```bash
-# Check total storage
-proton drive usage --account "$PROTON_ACCOUNT"
-
-# List the entire tree as JSON
-proton drive ls --account "$PROTON_ACCOUNT" --path "/" --long --format json
-
-# Sync a local backup folder to Drive
-proton drive put \
-  --account "$PROTON_ACCOUNT" \
-  --local ~/Backups/2025 \
-  --path "/Backups/2025" \
-  --recursive
-
-# Share a file with a time-limited link
-proton drive share \
-  --account "$PROTON_ACCOUNT" \
-  --path "/Shared/proposal.pdf" \
-  --expires "$(date -d '+7 days' +%Y-%m-%d)"
-```
+| `--query TEXT` | Search query |
+| `--type EXT` | Filter by extension (`pdf`, `jpg`, etc.) |
+| `--recursive` | Recursive folder operation |
+| `--long` | Detailed listing (size, date, type) |
+| `--expires DATE` | Share link expiry (`YYYY-MM-DD`) |
+| `--password TEXT` | Password-protect share link |
+| `--format json` | JSON output |

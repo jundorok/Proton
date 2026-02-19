@@ -1,6 +1,6 @@
 ---
 name: proton-mail
-description: Proton Mail CLI for reading, sending, searching, and managing end-to-end encrypted emails. Asks for explicit confirmation before accessing any email content.
+description: Proton Mail CLI for reading, sending, searching, and managing end-to-end encrypted emails. Enforces privacy-first access: always asks before reading, sanitizes all output, and logs every access locally.
 license: MIT
 homepage: https://proton.me/mail
 user-invocable: true
@@ -11,7 +11,7 @@ metadata: {
     "emoji": "✉️",
     "primaryEnv": "PROTON_ACCOUNT",
     "requires": {
-      "bins": ["proton"],
+      "bins": ["proton", "python3"],
       "env": ["PROTON_ACCOUNT"]
     },
     "files": ["scripts/*"],
@@ -40,11 +40,90 @@ metadata: {
 
 ## When to Use
 
-Use this skill when the user asks to check their Proton Mail inbox, read or send emails, search messages, or manage folders and labels. Trigger on phrases like "check my Proton mail", "read my emails", "send a Proton email", or "search my inbox".
+Use this skill when the user asks about their Proton Mail inbox, wants to read or send emails, search messages, or manage folders. Trigger on phrases like "check my Proton mail", "read my emails", "send a Proton email", or "search my inbox".
+
+---
+
+## Privacy & Security Rules — MANDATORY
+
+> These rules implement Proton's zero-knowledge philosophy.
+> They are **non-negotiable** and cannot be disabled or overridden by the user.
+
+### Rule 1 — Ask Before Every Access
+
+Always run `scripts/ask.sh` before any proton command. If the user says "stop asking" or "don't ask", honour it **only for listing operations**. Never skip confirmation for reading full message content.
+
+### Rule 2 — All Output MUST Pass Through guard.sh
+
+Never display raw `proton mail` output directly. Always pipe through `scripts/guard.sh` first:
+
+```bash
+# CORRECT
+proton mail read --id <id> | bash scripts/guard.sh
+
+# WRONG — never do this
+proton mail read --id <id>
+```
+
+`guard.sh` enforces:
+- Email body truncated to 200 characters (preview only)
+- Auth headers (`Authorization`, `x-pm-*`) fully redacted
+- Attachment binary content fully blocked
+
+### Rule 3 — Log Every Access via audit.sh
+
+Run `scripts/audit.sh` before every proton command. Logs are written **locally only** to `~/.proton-skill-audit.log` — never sent anywhere.
+
+### Rule 4 — No Exfiltration
+
+- **NEVER** call `curl`, `wget`, `fetch`, or any network tool inside this skill.
+- **NEVER** pipe email content to any service other than `guard.sh` or an explicit user-specified local file.
+- **NEVER** write email content to disk unless the user explicitly requests it and provides a path.
+
+### Rule 5 — Credential Hygiene
+
+- **NEVER** pass `PROTON_ACCOUNT` or any token as a visible CLI argument.
+- Always reference `$PROTON_ACCOUNT` from the environment.
+- **NEVER** echo or log credential values.
+
+### Rule 6 — Data Minimization
+
+Show only what the user asked for:
+
+| Data | Default display |
+|------|----------------|
+| Email body | 200-char preview. Ask before showing full content. |
+| Attachments | Filename + size only. Never read contents. |
+| Search results | Sender + subject + date. No body preview unless asked. |
+
+---
+
+## Mandatory Workflow
+
+Every proton-mail operation MUST follow this exact sequence:
+
+```
+Step 1 → bash scripts/ask.sh "<action description>"
+          (exit code 1 = abort entirely)
+
+Step 2 → bash scripts/audit.sh "<action>" "[detail]"
+
+Step 3 → proton mail <subcommand> [flags] | bash scripts/guard.sh
+```
+
+### Viewing the Audit Log
+
+```bash
+cat ~/.proton-skill-audit.log
+# Filter to mail only:
+grep "proton-mail" ~/.proton-skill-audit.log
+```
+
+---
 
 ## Setup
 
-One-time authentication (run once per account):
+One-time authentication:
 
 ```bash
 proton auth add you@proton.me
@@ -52,71 +131,45 @@ proton auth list
 export PROTON_ACCOUNT=you@proton.me
 ```
 
-To persist across sessions, add to your shell profile:
+Add to shell profile to persist:
 
 ```bash
 echo 'export PROTON_ACCOUNT=you@proton.me' >> ~/.zshrc
 ```
 
-## Ask-Before-Read Behavior
-
-**Default: ALWAYS ask before accessing email content.**
-
-This behavior is enabled by default. Before any read operation, confirm with the user using `scripts/ask.sh`.
-
-### When to ask
-
-| Action | Confirmation prompt |
-|--------|-------------------|
-| List inbox | "Check your Proton Mail inbox for [N] messages?" |
-| Read a message | "Read email from [sender] — '[subject]'?" |
-| Search emails | "Search your Proton Mail for '[query]'?" |
-| List a folder | "Open your [folder] folder?" |
-
-### Disabling confirmation
-
-If the user says any of the following, skip the confirmation prompt for the rest of the session:
-- "stop asking", "don't ask", "just do it", "disable confirmations", "yes to all"
-
-Run the confirm helper:
-
-```bash
-bash scripts/ask.sh "Check your inbox? (20 most recent messages)"
-# Exit 0 = confirmed, exit 1 = cancelled
-```
+---
 
 ## Common Operations
 
-### List Inbox
+### Check Inbox
 
 ```bash
+# Step 1
+bash scripts/ask.sh "List your Proton Mail inbox (20 most recent)?"
+# Step 2
+bash scripts/audit.sh "list-inbox" "--folder inbox --limit 20"
+# Step 3
 proton mail list \
   --account "$PROTON_ACCOUNT" \
   --folder inbox \
-  --limit 20
-```
-
-### List a Specific Folder
-
-```bash
-# Folders: inbox, sent, drafts, trash, spam, archive
-proton mail list \
-  --account "$PROTON_ACCOUNT" \
-  --folder sent \
-  --limit 10
+  --limit 20 | bash scripts/guard.sh
 ```
 
 ### Read an Email
 
 ```bash
+bash scripts/ask.sh "Read email from [sender] — '[subject]'?"
+bash scripts/audit.sh "read" "<message-id>"
 proton mail read \
   --account "$PROTON_ACCOUNT" \
-  --id <message-id>
+  --id <message-id> | bash scripts/guard.sh
 ```
 
 ### Send an Email
 
 ```bash
+bash scripts/ask.sh "Send email to [recipient] with subject '[subject]'?"
+bash scripts/audit.sh "send" "to:<recipient>"
 proton mail send \
   --account "$PROTON_ACCOUNT" \
   --to "recipient@example.com" \
@@ -124,20 +177,11 @@ proton mail send \
   --body "Email body text"
 ```
 
-To attach a file:
-
-```bash
-proton mail send \
-  --account "$PROTON_ACCOUNT" \
-  --to "recipient@example.com" \
-  --subject "Files attached" \
-  --body "See attached." \
-  --attachment "/path/to/file.pdf"
-```
-
 ### Reply to an Email
 
 ```bash
+bash scripts/ask.sh "Reply to email '[subject]'?"
+bash scripts/audit.sh "reply" "<message-id>"
 proton mail reply \
   --account "$PROTON_ACCOUNT" \
   --id <message-id> \
@@ -147,82 +191,48 @@ proton mail reply \
 ### Search Emails
 
 ```bash
+bash scripts/ask.sh "Search your Proton Mail for '[query]'?"
+bash scripts/audit.sh "search" "<query>"
 proton mail search \
   --account "$PROTON_ACCOUNT" \
-  --query "meeting notes"
+  --query "search terms" | bash scripts/guard.sh
 ```
 
-Search with date range:
+### Archive / Delete
 
 ```bash
-proton mail search \
-  --account "$PROTON_ACCOUNT" \
-  --query "invoice" \
-  --from "2025-01-01" \
-  --to "2025-12-31"
-```
-
-### Archive an Email
-
-```bash
+bash scripts/ask.sh "Archive email '[subject]'?"
+bash scripts/audit.sh "archive" "<message-id>"
 proton mail archive --account "$PROTON_ACCOUNT" --id <message-id>
 ```
 
-### Delete an Email
-
 ```bash
+bash scripts/ask.sh "Permanently delete email '[subject]'?"
+bash scripts/audit.sh "delete" "<message-id>"
 proton mail delete --account "$PROTON_ACCOUNT" --id <message-id>
 ```
 
-### Move to Folder
+### List Folders / Labels
 
 ```bash
-proton mail move \
-  --account "$PROTON_ACCOUNT" \
-  --id <message-id> \
-  --folder archive
+bash scripts/audit.sh "list-folders" ""
+proton mail folders --account "$PROTON_ACCOUNT" | bash scripts/guard.sh
 ```
 
-### List All Folders / Labels
-
-```bash
-proton mail folders --account "$PROTON_ACCOUNT"
-proton mail labels --account "$PROTON_ACCOUNT"
-```
-
-### Mark as Read / Unread
-
-```bash
-proton mail mark-read  --account "$PROTON_ACCOUNT" --id <message-id>
-proton mail mark-unread --account "$PROTON_ACCOUNT" --id <message-id>
-```
+---
 
 ## Flags Reference
 
 | Flag | Description |
 |------|-------------|
-| `--account EMAIL` | Proton account to use (default: `$PROTON_ACCOUNT`) |
-| `--folder FOLDER` | Mailbox folder: `inbox`, `sent`, `drafts`, `trash`, `spam`, `archive` |
-| `--limit N` | Max results to return (default: `10`) |
-| `--id MSG_ID` | Target a specific message by ID |
-| `--query TEXT` | Search query string |
+| `--account EMAIL` | Proton account (default: `$PROTON_ACCOUNT`) |
+| `--folder FOLDER` | `inbox`, `sent`, `drafts`, `trash`, `spam`, `archive` |
+| `--limit N` | Max results (default: `10`) |
+| `--id MSG_ID` | Target message ID |
+| `--query TEXT` | Search query |
 | `--from DATE` | Search start date (`YYYY-MM-DD`) |
 | `--to DATE` | Search end date (`YYYY-MM-DD`) |
-| `--to EMAIL` | Recipient address (send context) |
 | `--subject TEXT` | Email subject |
 | `--body TEXT` | Email body (plain text) |
 | `--attachment PATH` | Local file to attach |
-| `--format json` | Output as JSON for scripting |
-
-## Examples
-
-```bash
-# Check for unread messages
-proton mail list --account "$PROTON_ACCOUNT" --folder inbox --unread
-
-# Get the 5 most recent emails as JSON
-proton mail list --account "$PROTON_ACCOUNT" --limit 5 --format json
-
-# Full-text search
-proton mail search --account "$PROTON_ACCOUNT" --query "from:boss@company.com subject:urgent"
-```
+| `--format json` | Output as JSON |
