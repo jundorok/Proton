@@ -22,6 +22,13 @@ metadata: {
         "package": "proton-client",
         "bins": [],
         "label": "Install proton-client (pip)"
+      },
+      {
+        "id": "pip-playwright",
+        "kind": "pip",
+        "package": "playwright",
+        "bins": [],
+        "label": "Install playwright (pip)"
       }
     ]
   }

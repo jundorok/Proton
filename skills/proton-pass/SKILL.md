@@ -22,6 +22,13 @@ metadata: {
         "script": "curl -fsSL https://proton.me/download/pass-cli/install.sh | bash",
         "bins": ["pass"],
         "label": "Install Proton Pass CLI (official)"
+      },
+      {
+        "id": "pip-playwright",
+        "kind": "pip",
+        "package": "playwright",
+        "bins": [],
+        "label": "Install playwright (pip)"
       }
     ]
   }
