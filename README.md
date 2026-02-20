@@ -1,109 +1,54 @@
-# Proton
+# Proton Calendar CLI (API 기반, 비공식)
 
-OpenClaw skills for the Proton ecosystem — Mail, Calendar, and Pass.
+이 저장소는 **Proton Calendar 일정 CRUD 전용 CLI**입니다.
 
-## Skills
+- 대상: Proton Calendar만 사용
+- 방식: Proton 오픈소스 내부 API 라이브러리 `go-proton-api` 사용
+- 주의: Proton의 안정적인 공개 퍼블릭 Calendar API가 아니라 **내부/비공식 경로**입니다.
 
-| Skill | Description | Emoji |
-|-------|-------------|-------|
-| [`proton-mail`](skills/proton-mail/) | Read, send, search, and manage encrypted email | ✉️ |
-| [`proton-calendar`](skills/proton-calendar/) | View and manage calendar events via web automation | 📅 |
-| [`proton-pass`](skills/proton-pass/) | Retrieve, copy, and manage encrypted passwords | 🔑 |
+## 기능
 
-All skills enforce a configurable **ask-before-read** behavior that prompts for confirmation before accessing any sensitive content.
+- `calendars`: 캘린더 목록 조회
+- `list`: 일정 목록 조회
+- `get`: 일정 단건 조회
+- `create`: 일정 생성
+- `update`: 일정 수정
+- `delete`: 일정 삭제
 
-## Requirements
+## 요구사항
 
-### proton-mail
-- `python3`
-- `proton-client` Python package (`pip install proton-client`)
-- `PROTON_ACCOUNT` — your Proton email address
-- `PROTON_PASSWORD` — your Proton account password
+- Go 1.24+
+- 네트워크에서 Go 모듈 다운로드 가능해야 함
+- Proton 계정 로그인 정보
 
-### proton-calendar
-- `python3`
-- `playwright` Python package + Chromium (`pip install playwright && playwright install chromium`)
-- `PROTON_ACCOUNT` — your Proton email address
-- `PROTON_PASSWORD` — your Proton account password
-
-### proton-pass
-- Proton Pass CLI (`pass` binary)
-- A paid Proton plan (Pass Plus, Pass Family, or Proton bundle)
-
-## Installation
-
-### proton-mail
+환경 변수:
 
 ```bash
-pip install proton-client
-export PROTON_ACCOUNT=you@proton.me
-export PROTON_PASSWORD=yourpassword
+export PROTON_USERNAME="you@proton.me"      # 또는 PROTON_ACCOUNT
+export PROTON_PASSWORD="your-login-password"
+export PROTON_MAILBOX_PASSWORD="optional"   # 미설정 시 PROTON_PASSWORD 사용
 ```
 
-### proton-calendar
+## 실행
 
 ```bash
-pip install playwright
-playwright install chromium
-export PROTON_ACCOUNT=you@proton.me
-export PROTON_PASSWORD=yourpassword
+go run . calendars
+go run . list --from 2026-02-20 --to 2026-02-28
+go run . create --title "Team Sync" --start "2026-02-21T09:00" --end "2026-02-21T10:00"
+go run . update --id "<EVENT_ID>" --title "Updated title"
+go run . delete --id "<EVENT_ID>"
 ```
 
-### proton-pass
+시간 입력 포맷:
 
-```bash
-curl -fsSL https://proton.me/download/pass-cli/install.sh | bash
-# Binary installs to ~/.local/bin/pass
-```
+- RFC3339: `2026-02-21T09:00:00+09:00`
+- 로컬시간: `2026-02-21T09:00` 또는 `2026-02-21 09:00`
+- 날짜만: `2026-02-21`
 
-### Install Skills via ClawHub
+`create --all-day`를 쓰면 종일 일정으로 생성됩니다.
 
-```bash
-clawhub install proton-mail
-clawhub install proton-calendar
-clawhub install proton-pass
-```
+## 한계
 
-## Ask-Before-Read
-
-Every skill asks for explicit confirmation before accessing sensitive data. This is enabled by default.
-
-| Skill | What triggers a confirmation |
-|-------|------------------------------|
-| Mail | Before listing inbox, reading a message, or searching |
-| Calendar | Before listing events, and always for create/update/delete |
-| Pass | Before listing items, retrieving passwords, or copying to clipboard |
-
-To skip confirmation for the current session, tell the agent: _"stop asking"_, _"don't ask"_, or _"disable confirmations"_.
-
-> **Note:** Proton Pass credential retrieval always requires confirmation and cannot be disabled.
-
-## Skill Structure
-
-```
-skills/
-├── proton-mail/
-│   ├── SKILL.md
-│   └── scripts/
-│       ├── ask.sh
-│       ├── audit.sh
-│       ├── guard.sh
-│       └── mail.py         # proton-python-client wrapper
-├── proton-calendar/
-│   ├── SKILL.md
-│   └── scripts/
-│       ├── ask.sh
-│       ├── audit.sh
-│       ├── guard.sh
-│       └── calendar.py     # Playwright web automation
-└── proton-pass/
-    ├── SKILL.md
-    └── scripts/
-        ├── ask.sh
-        ├── audit.sh
-        └── guard.sh
-```
-
-## License
-
-MIT
+- Proton 내부 API/암호화 스택 변경 시 동작이 깨질 수 있습니다.
+- 2FA가 켜진 계정은 실행 중 OTP 입력이 필요할 수 있습니다.
+- 이 환경에서는 외부 네트워크가 막혀 있어 실제 API 연동 테스트를 수행하지 못했습니다.
